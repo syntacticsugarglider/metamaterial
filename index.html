@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8">
+    <title>metamaterial</title>
+</head>
+
+<body>
+    <style>
+        html {
+            --bg-co: #fff;
+            --fg-co: #000;
+            --fg-accent: #333;
+            --bg-accent: #f3f3f3;
+            --bg-accent-3: #dedede;
+            --bg-accent-2: #f5f5f5;
+            line-height: 1.4;
+            -webkit-text-size-adjust: 100%;
+            font-size: 14px;
+            color: var(--fg-co);
+            background: var(--bg-co);
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            overflow: hidden;
+        }
+
+        canvas {
+            height: 100vh;
+            width: 100vw;
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+
+        .slider {
+            position: fixed;
+            width: 400px;
+            border-radius: 40px;
+            height: 40px;
+            left: calc(50vw - 200px);
+            bottom: 50px;
+            background: black;
+            border: 2px solid white;
+            box-shadow: 0 5px 10px rgba(0, 0, 0, 0.06);
+        }
+
+        .slider::before {
+            content: '';
+            display: block;
+            position: absolute;
+            width: 90%;
+            margin-left: 5%;
+            margin-top: 19px;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 20px;
+            margin-top: 10px;
+            margin-left: 5%;
+            background: white;
+        }
+    </style>
+    <script type="text/javascript">
+        const SAMPLE_RATIO = 2;
+        window.addEventListener('load', function () {
+            let c = 0;
+            const track = document.querySelector('.slider');
+            const thumb = document.querySelector('.thumb');
+            let tracking = false;
+            let c_touch = [0, 0];
+            let panning = false;
+            window.addEventListener('mousedown', (e) => {
+                if (e.target.classList.contains("thumb") || e.target.classList.contains("slider")) { tracking = true } else {
+                    panning = true;
+                    c_touch = [mpos.x, mpos.y];
+                }
+            });
+            window.addEventListener('mouseup', () => {
+                tracking = false;
+                panning = false;
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (tracking) {
+                    const pos = Math.min(Math.max(e.x - track.getBoundingClientRect().x - 32, 0), 345);
+                    c = pos / 172.5;
+                    thumb.setAttribute("style", "margin-left:calc(" + pos.toString() + "px + 5%);");
+                }
+                if (panning) {
+                    c_touch[0] += (e.movementX / view.width);
+                    mpos.x = c_touch[0];
+                    c_touch[1] += (e.movementY / view.height);
+                    mpos.y = c_touch[1];
+                }
+            });
+            window.addEventListener('blur', () => {
+                tracking = false;
+            });
+            const canvas = document.querySelector("canvas");
+            let view = canvas.getBoundingClientRect();
+            let mpos = { x: 0.5, y: 0.5 };
+            canvas.width = view.width * SAMPLE_RATIO;
+            canvas.height = view.height * SAMPLE_RATIO;
+            const gl = canvas.getContext("webgl");
+            if (gl === null) {
+                alert("Unable to initialize WebGL. Your browser may not support it.");
+                return;
+            }
+
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            fetch('/frag.glsl')
+                .then(function (response) {
+                    return response.text();
+                })
+                .then(function (shader) {
+                    const frag = gl.createShader(gl.FRAGMENT_SHADER);
+                    gl.shaderSource(frag, shader);
+                    gl.compileShader(frag);
+                    if (!gl.getShaderParameter(frag, gl.COMPILE_STATUS)) {
+                        alert(gl.getShaderInfoLog(frag));
+                        return null;
+                    }
+                    const vert = gl.createShader(gl.VERTEX_SHADER);
+                    gl.shaderSource(vert, `#version 100
+                        attribute vec4 aVertexPosition;
+                        void main() {
+                            gl_Position = aVertexPosition;
+                        }
+                    `);
+                    gl.compileShader(vert);
+                    if (!gl.getShaderParameter(vert, gl.COMPILE_STATUS)) {
+                        alert(gl.getShaderInfoLog(vert));
+                        return null;
+                    }
+                    const program = gl.createProgram();
+                    gl.attachShader(program, vert);
+                    gl.attachShader(program, frag);
+                    gl.linkProgram(program);
+                    const vertices = new Float32Array([1, -1, 0, 1, 1, 0, -1, -1, 0, -1, 1, 0]);
+                    const vbo = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+                    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+                    let loc = gl.getAttribLocation(program, 'aVertexPosition');
+                    let res = gl.getUniformLocation(program, 'u_resolution');
+                    let time = gl.getUniformLocation(program, 'u_time');
+                    let mloc = gl.getUniformLocation(program, 'u_mouse');
+                    gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 0, 0);
+                    gl.enableVertexAttribArray(loc);
+
+                    window.addEventListener('resize', () => {
+                        view = canvas.getBoundingClientRect();
+                        canvas.width = view.width * SAMPLE_RATIO;
+                        canvas.height = view.height * SAMPLE_RATIO
+                    });
+
+                    const draw = (delta) => {
+                        gl.viewport(0, 0, view.width * SAMPLE_RATIO, view.height * SAMPLE_RATIO);
+                        gl.clear(gl.COLOR_BUFFER_BIT);
+                        gl.useProgram(program);
+                        gl.uniform1f(time, c);
+                        gl.uniform2f(res, view.width * SAMPLE_RATIO, view.height * SAMPLE_RATIO);
+                        gl.uniform2f(mloc, mpos.x, mpos.y);
+                        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                        window.requestAnimationFrame(draw);
+                    };
+                    window.requestAnimationFrame(draw);
+                });
+        })
+    </script>
+    <canvas></canvas>
+    <div class="slider">
+        <div class="thumb"></div>
+    </div>
+</body>
+
+</html>
