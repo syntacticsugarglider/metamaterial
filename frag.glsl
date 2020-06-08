@@ -100,16 +100,20 @@ mat3 rotateY(float theta){
 }
 
 float distSphere(vec3 samplePoint,vec3 ray,vec3 center){
-    vec3 normal=normalize(samplePoint-center);
-    vec3 other=vec3(0,0,-1);
-    vec3 sum=normal+other;
-    mat3 R=2./dot(sum,sum)*mat3(sum.x*sum.x,sum.x*sum.y,sum.x*sum.z,sum.y*sum.x,sum.y*sum.y,sum.y*sum.z,sum.z*sum.x,sum.z*sum.y,sum.z*sum.z);
-    R=R-mat3(1,0,0,0,1,0,0,0,1);
-    
     float radius=length(samplePoint-center);
+    vec3 newVec=samplePoint+ray*radius*2.;
+    ray=-ray;
     
-    vec3 newVec=R*ray;
-    return 2.*radius*newVec.z;
+    float depth=0.;
+    for(int i=0;i<MAX_MARCHING_STEPS;i++){
+        float dist=length(newVec+depth*ray-center)-radius;
+        if(dist<EPSILON){
+            
+            return radius*2.-depth;
+        }
+        depth+=dist;
+        
+    }
     
 }
 
